@@ -8,7 +8,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        /* نفس الأنماط السابقة - تم حذفها للاختصار، يمكنك إعادة استخدامها */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: #f0f2f5; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; }
@@ -58,7 +57,6 @@
         </div>
     </div>
     
-    <!-- قسم استبدال كامل -->
     <div class="upload-area">
         <h3>🔄 استبدال كامل (أرشفة المنجز فقط + توزيع جديد)</h3>
         <div class="upload-form">
@@ -70,7 +68,6 @@
         <div id="fullMsg" style="margin-top:10px;"></div>
     </div>
     
-    <!-- قسم إضافة عدادات جديدة مع توزيع تلقائي -->
     <div class="upload-area">
         <h3>➕ إضافة عدادات جديدة (سيتم توزيعها على الفرق الحالية تلقائياً - يُسمح بتكرار رقم العداد)</h3>
         <div class="upload-form">
@@ -80,7 +77,6 @@
         <div id="appendMsg" style="margin-top:10px;"></div>
     </div>
     
-    <!-- قسم البحث -->
     <div class="search-area">
         <h3>🔍 البحث عن تاريخ عداد (رقم العداد هو المفتاح)</h3>
         <div class="search-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
@@ -92,7 +88,6 @@
         <div class="map-container" id="searchMap" style="height:300px; display:none;"></div>
     </div>
     
-    <!-- قسم التقرير حسب الفترة -->
     <div class="upload-area">
         <h3>📅 تقرير المنجز حسب الفترة (من الأرشيف)</h3>
         <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:flex-end;">
@@ -105,7 +100,6 @@
         <div id="reportTableContainer" style="max-height:400px; overflow-y:auto; display:none; margin-top:10px;"></div>
     </div>
     
-    <!-- الخريطة والإحصائيات -->
     <div class="stats-cards" id="statsCards"></div>
     <div class="map-container" id="managerMap">
         <div class="layer-control" id="layerControl">
@@ -126,7 +120,7 @@
 </div>
 
 <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx4L_OfPDaYdFTTPfs4kKktJW2_ucjfY12KTkgMofagF7ok2OZjEB6E8Qenfge4dl-l/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHgwrHtst-Hfa3IgovLE0RRNpfTSb4SSSa53GKBhKaowtW4XrPJxW1TJN9vHFizbnC/exec';
     let map, markersLayer, polygonLayer, currentTileLayer = null;
     let currentLocationMarker = null, currentLocationCircle = null;
     let searchMap = null, searchMarker = null;
@@ -150,7 +144,6 @@
     
     function log(msg) { const logDiv = document.getElementById('logArea'); logDiv.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`; logDiv.scrollTop = logDiv.scrollHeight; console.log(msg); }
     
-    // دالة محسنة لقراءة CSV و Excel مع ضمان قراءة meter_id بشكل صحيح
     async function parseCSVorExcel(file) {
         return new Promise((resolve, reject) => {
             const ext = file.name.split('.').pop().toLowerCase();
@@ -234,12 +227,8 @@
                         if (h.match(/(lng|lon|طول|x|longitude)/i)) colIdx.lng = i;
                         if (h.match(/(action|الإجراء|الاجراء)/i)) colIdx.action = i;
                     }
-                    if (colIdx.id === -1 && headers.length >= 1) {
-                        colIdx.id = 0;
-                    }
-                    if (colIdx.lat === -1 || colIdx.lng === -1) {
-                        return reject(new Error('لم يتم العثور على أعمدة خطوط الطول والعرض'));
-                    }
+                    if (colIdx.id === -1 && headers.length >= 1) colIdx.id = 0;
+                    if (colIdx.lat === -1 || colIdx.lng === -1) return reject(new Error('لم يتم العثور على أعمدة خطوط الطول والعرض'));
                     for (let i=1; i<rows.length; i++) {
                         const row = rows[i];
                         if (!row || row.length < 3) continue;
@@ -385,51 +374,37 @@
     
     // ========== دوال التصدير المعدلة ==========
     
-    // تصدير الجدول الرئيسي (meters الحالية)
     async function exportToExcel() {
         const data = await loadFromGoogleSheets();
         if (!data?.meters) { alert('لا توجد بيانات'); return; }
         
-        // جمع كل المفاتيح الإضافية من جميع الصفوف
-        const allExtraKeys = new Set();
-        data.meters.forEach(m => {
+        // جمع المفاتيح الإضافية بالترتيب
+        const allExtraKeys = [];
+        const seen = new Set();
+        for (const m of data.meters) {
             if (m.extra) {
-                Object.keys(m.extra).forEach(k => allExtraKeys.add(k));
-            }
-        });
-        const extraKeys = Array.from(allExtraKeys); // ترتيب المفاتيح حسب الظهور (قد لا يكون محدداً، لكننا نستخدم الترتيب الأبجدي أو حسب الظهور الأول)
-        // للحفاظ على ترتيب ثابت، نرتب المفاتيح أبجدياً (أو حسب أول ظهور)
-        // لكن الأفضل أن نرتبها حسب أول ظهور في أول صف يحتوي عليها
-        // سنقوم بترتيبها حسب الظهور في أول صف يحتوي على extra
-        if (data.meters.length > 0) {
-            const firstExtra = data.meters.find(m => m.extra && Object.keys(m.extra).length > 0);
-            if (firstExtra) {
-                const firstKeys = Object.keys(firstExtra.extra);
-                extraKeys.sort((a,b) => {
-                    const ia = firstKeys.indexOf(a);
-                    const ib = firstKeys.indexOf(b);
-                    if (ia === -1 && ib === -1) return a.localeCompare(b);
-                    if (ia === -1) return 1;
-                    if (ib === -1) return -1;
-                    return ia - ib;
-                });
+                for (const k of Object.keys(m.extra)) {
+                    if (!seen.has(k)) {
+                        seen.add(k);
+                        allExtraKeys.push(k);
+                    }
+                }
             }
         }
         
         const rows = data.meters.map(m => {
             const row = {
-                'رقم العداد': m.meterId,
-                'خط العرض': m.lat,
-                'خط الطول': m.lng,
-                'الإجراء': m.action,
-                'الحالة': m.status === 'completed' ? 'تم' : 'قيد',
-                'تاريخ الإنجاز': m.completedAt || '',
-                'رقم المخالفة': m.violationNumber || '',
-                'الفريق': data.teams.find(t => t.id === m.teamId)?.name || ''
+                'meter_id': m.meterId,
+                'lat': m.lat,
+                'lng': m.lng,
+                'action': m.action,
+                'status': m.status === 'completed' ? 'تم' : 'قيد',
+                'completedAt': m.completedAt || '',
+                'teamId': m.teamId || '',
+                'violationNumber': m.violationNumber || ''
             };
-            // إضافة الأعمدة الإضافية
             if (m.extra) {
-                extraKeys.forEach(k => {
+                allExtraKeys.forEach(k => {
                     row[k] = m.extra[k] || '';
                 });
             }
@@ -442,52 +417,40 @@
         XLSX.writeFile(wb, `meters_${new Date().toISOString().slice(0,19)}.xlsx`);
     }
     
-    // تصدير تقرير الأرشيف حسب الفترة
     function exportReportToExcel() {
         if (!lastReportData || lastReportData.length === 0) { alert('لا توجد بيانات للتصدير'); return; }
         
-        // جمع كل المفاتيح الإضافية
-        const allExtraKeys = new Set();
-        lastReportData.forEach(r => {
+        // جمع المفاتيح الإضافية بالترتيب
+        const allExtraKeys = [];
+        const seen = new Set();
+        for (const r of lastReportData) {
             if (r.extra) {
-                Object.keys(r.extra).forEach(k => allExtraKeys.add(k));
-            }
-        });
-        const extraKeys = Array.from(allExtraKeys);
-        if (lastReportData.length > 0) {
-            const firstExtra = lastReportData.find(r => r.extra && Object.keys(r.extra).length > 0);
-            if (firstExtra) {
-                const firstKeys = Object.keys(firstExtra.extra);
-                extraKeys.sort((a,b) => {
-                    const ia = firstKeys.indexOf(a);
-                    const ib = firstKeys.indexOf(b);
-                    if (ia === -1 && ib === -1) return a.localeCompare(b);
-                    if (ia === -1) return 1;
-                    if (ib === -1) return -1;
-                    return ia - ib;
-                });
+                for (const k of Object.keys(r.extra)) {
+                    if (!seen.has(k)) {
+                        seen.add(k);
+                        allExtraKeys.push(k);
+                    }
+                }
             }
         }
         
         const rows = lastReportData.map(r => {
             const row = {
-                'رقم العداد': r.meterId,
-                'خط العرض': r.lat,
-                'خط الطول': r.lng,
-                'الإجراء': r.action,
-                'الحالة': r.status === 'completed' ? 'تم' : r.status,
-                'تاريخ الإنجاز': r.completedAt ? new Date(r.completedAt).toLocaleString() : '',
-                'الفريق': r.teamId,
-                'رقم المخالفة': r.violationNumber,
+                'meter_id': r.meterId,
+                'lat': r.lat,
+                'lng': r.lng,
+                'action': r.action,
+                'status': r.status === 'completed' ? 'تم' : r.status,
+                'completedAt': r.completedAt ? new Date(r.completedAt).toLocaleString() : '',
+                'teamId': r.teamId || '',
+                'violationNumber': r.violationNumber || ''
             };
-            // إضافة الأعمدة الإضافية
             if (r.extra) {
-                extraKeys.forEach(k => {
+                allExtraKeys.forEach(k => {
                     row[k] = r.extra[k] || '';
                 });
             }
-            // إضافة تاريخ الأرشفة في النهاية
-            row['تاريخ الأرشفة'] = r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : '';
+            row['archiveTimestamp'] = r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : '';
             return row;
         });
         
@@ -497,7 +460,7 @@
         XLSX.writeFile(wb, `archive_report_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
     
-    // باقي الدوال (refreshAllTokens, searchMeterHistory, archiveCompleted, generateReport) كما هي دون تغيير
+    // باقي الدوال (refreshAllTokens, searchMeterHistory, archiveCompleted, generateReport)
     async function refreshAllTokens() {
         if (!confirm('سيتم تجديد روابط الفرق. هل تريد المتابعة؟')) return;
         try {
@@ -588,8 +551,9 @@
                 return;
             }
             resultDiv.innerHTML = `<div style="color:green;">✅ تم العثور على ${data.count} سجل</div>`;
-            let html = `<table><thead><tr><th>رقم العداد</th><th>خط العرض</th><th>خط الطول</th><th>الإجراء</th><th>الحالة</th><th>تاريخ الإنجاز</th><th>الفريق</th><th>رقم المخالفة</th><th>بيانات إضافية</th><th>تاريخ الأرشفة</th></tr></thead><tbody>`;
+            let html = `<table><thead><tr><th>meter_id</th><th>lat</th><th>lng</th><th>action</th><th>status</th><th>completedAt</th><th>teamId</th><th>violationNumber</th><th>بيانات إضافية</th><th>archiveTimestamp</th></tr></thead><tbody>`;
             for (let row of data.rows) {
+                const extraStr = Object.entries(row.extra).map(([k,v])=>`${k}:${v}`).join('; ');
                 html += `<tr>
                     <td>${row.meterId}</td>
                     <td>${row.lat}</td>
@@ -599,7 +563,7 @@
                     <td>${row.completedAt ? new Date(row.completedAt).toLocaleString() : ''}</td>
                     <td>${row.teamId}</td>
                     <td>${row.violationNumber}</td>
-                    <td>${Object.entries(row.extra).map(([k,v])=>`${k}:${v}`).join(', ')}</td>
+                    <td>${extraStr}</td>
                     <td>${row.archiveTimestamp ? new Date(row.archiveTimestamp).toLocaleString() : ''}</td>
                 </tr>`;
             }
