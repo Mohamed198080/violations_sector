@@ -48,7 +48,7 @@
 <body>
 <div class="container">
     <div class="header">
-        <h1>📊 مدير النظام - قسم المخالفات</h1>
+        <h1>📊( مدير إدارة المخالفات)</h1>
         <div>
             <button onclick="refreshData()">🔄 تحديث</button>
             <button onclick="exportToExcel()" style="background:#27ae60;">📎 Excel</button>
@@ -81,7 +81,7 @@
     
     <!-- قسم البحث -->
     <div class="search-area">
-        <h3>🔍 البحث عن تاريخ عداد (رقم العداد)</h3>
+        <h3>🔍 البحث عن تاريخ عداد </h3>
         <div class="search-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
             <div class="form-group"><label>رقم العداد:</label><input type="text" id="searchMeterId" placeholder="أدخل رقم العداد"></div>
             <button onclick="searchMeterHistory()" style="margin-top:6px;">🔍 بحث</button>
@@ -89,6 +89,19 @@
         <div id="searchResult" style="margin-top:10px;"></div>
         <div class="history-table" id="historyTable" style="display:none;"></div>
         <div class="map-container" id="searchMap" style="height:300px; display:none;"></div>
+    </div>
+    
+    <!-- قسم التقرير حسب الفترة -->
+    <div class="upload-area">
+        <h3>📅 تقرير المنجز حسب الفترة (من الأرشيف)</h3>
+        <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:flex-end;">
+            <div class="form-group"><label>من تاريخ:</label><input type="date" id="reportStartDate"></div>
+            <div class="form-group"><label>إلى تاريخ:</label><input type="date" id="reportEndDate"></div>
+            <button onclick="generateReport()" style="background:#8e44ad;">📊 استخراج التقرير</button>
+            <button onclick="exportReportToExcel()" style="background:#27ae60;" id="exportReportBtn" disabled>📎 تصدير Excel</button>
+        </div>
+        <div id="reportResult" style="margin-top:10px;"></div>
+        <div id="reportTableContainer" style="max-height:400px; overflow-y:auto; display:none; margin-top:10px;"></div>
     </div>
     
     <!-- الخريطة والإحصائيات -->
@@ -108,14 +121,15 @@
     </div>
     
     <div class="log-area" id="logArea">📋 سجل العمليات...</div>
-    <div class="footer">✅ يمكن للفني تسجيل رقم المخالفة عند إتمام العداد | مع تحيات قسم المخالفات</div>
+    <div class="footer">✅ يمكن للفني تسجيل رقم المخالفة عند إتمام العداد | مع تحيات إداررة المخالفات</div>
 </div>
 
 <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxETEoLD9_viwsggB5Ys2ZY4Uy_XQZjmvNoAwQ8j0LLBBhcg_MUZRs-h-k2d1CLVXad/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzNrwFLfV5SZxf4_uAeZXLU91xBmJCcrZo64DhtIquwAig1e4q9vQXmOIllQIChEB1d/exec';
     let map, markersLayer, polygonLayer, currentTileLayer = null;
     let currentLocationMarker = null, currentLocationCircle = null;
     let searchMap = null, searchMarker = null;
+    let lastReportData = null;
     
     function getColorFromAction(action, status) {
         if (status === 'completed') return '#7f8c8d';
@@ -322,7 +336,7 @@
         const csvFile = document.getElementById('appendCsvFile').files[0];
         if (!csvFile) { alert('اختر ملف CSV'); return; }
         const msgDiv = document.getElementById('appendMsg');
-        msgDiv.innerHTML = '⏳ جاري إضافة العدادات الجديدة وتوزيعها (يُسمح بتكرار الأرقام)...';
+        msgDiv.innerHTML = '⏳ جاري إضافة العدادات الجديدة وتوزيعها ...';
         try {
             const newMeters = await parseCSVorExcel(csvFile);
             if (!newMeters.length) throw new Error('لا توجد عدادات صالحة');
@@ -415,6 +429,76 @@
         } catch(err) {
             alert('خطأ في الاتصال: ' + err.message);
         }
+    }
+    
+    async function generateReport() {
+        const startDate = document.getElementById('reportStartDate').value;
+        const endDate = document.getElementById('reportEndDate').value;
+        if (!startDate || !endDate) { alert('يرجى تحديد الفترة'); return; }
+        if (startDate > endDate) { alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية'); return; }
+        
+        const btn = event.target;
+        btn.innerText = '⏳ جاري...';
+        btn.disabled = true;
+        try {
+            const res = await fetch(`${SCRIPT_URL}?action=getArchiveReport&startDate=${startDate}&endDate=${endDate}`);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            lastReportData = data.rows;
+            const resultDiv = document.getElementById('reportResult');
+            const container = document.getElementById('reportTableContainer');
+            if (data.count === 0) {
+                resultDiv.innerHTML = `<div style="color:orange;">⚠️ لا توجد سجلات في هذه الفترة</div>`;
+                container.style.display = 'none';
+                document.getElementById('exportReportBtn').disabled = true;
+                return;
+            }
+            resultDiv.innerHTML = `<div style="color:green;">✅ تم العثور على ${data.count} سجل</div>`;
+            let html = `<table><thead><tr><th>رقم العداد</th><th>خط العرض</th><th>خط الطول</th><th>الإجراء</th><th>الحالة</th><th>تاريخ الإنجاز</th><th>الفريق</th><th>رقم المخالفة</th><th>بيانات إضافية</th><th>تاريخ الأرشفة</th></tr></thead><tbody>`;
+            for (let row of data.rows) {
+                html += `<tr>
+                    <td>${row.meterId}</td>
+                    <td>${row.lat}</td>
+                    <td>${row.lng}</td>
+                    <td>${row.action}</td>
+                    <td>${row.status === 'completed' ? 'تم' : row.status}</td>
+                    <td>${row.completedAt ? new Date(row.completedAt).toLocaleString() : ''}</td>
+                    <td>${row.teamId}</td>
+                    <td>${row.violationNumber}</td>
+                    <td>${Object.entries(row.extra).map(([k,v])=>`${k}:${v}`).join(', ')}</td>
+                    <td>${row.archiveTimestamp ? new Date(row.archiveTimestamp).toLocaleString() : ''}</td>
+                </tr>`;
+            }
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+            container.style.display = 'block';
+            document.getElementById('exportReportBtn').disabled = false;
+        } catch(err) {
+            alert('خطأ: ' + err.message);
+        } finally {
+            btn.innerText = '📊 استخراج التقرير';
+            btn.disabled = false;
+        }
+    }
+    
+    function exportReportToExcel() {
+        if (!lastReportData || lastReportData.length === 0) { alert('لا توجد بيانات للتصدير'); return; }
+        const rows = lastReportData.map(r => ({
+            'رقم العداد': r.meterId,
+            'خط العرض': r.lat,
+            'خط الطول': r.lng,
+            'الإجراء': r.action,
+            'الحالة': r.status === 'completed' ? 'تم' : r.status,
+            'تاريخ الإنجاز': r.completedAt ? new Date(r.completedAt).toLocaleString() : '',
+            'الفريق': r.teamId,
+            'رقم المخالفة': r.violationNumber,
+            'بيانات إضافية': Object.entries(r.extra).map(([k,v])=>`${k}:${v}`).join('; '),
+            'تاريخ الأرشفة': r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : ''
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'تقرير الأرشيف');
+        XLSX.writeFile(wb, `archive_report_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
     
     initMap();
