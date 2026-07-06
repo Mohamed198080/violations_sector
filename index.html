@@ -48,7 +48,7 @@
 <body>
 <div class="container">
     <div class="header">
-        <h1>📊 مدير التوزيع الجغرافي (روابط ثابتة + مخالفات)</h1>
+        <h1>📊 مدير التوزيع الجغرافي </h1>
         <div>
             <button onclick="refreshData()">🔄 تحديث</button>
             <button onclick="exportToExcel()" style="background:#27ae60;">📎 Excel</button>
@@ -69,7 +69,7 @@
     </div>
     
     <div class="upload-area">
-        <h3>➕ إضافة عدادات جديدة (سيتم توزيعها على الفرق الحالية تلقائياً - يُسمح بتكرار رقم العداد)</h3>
+        <h3>➕ إضافة عدادات جديدة (سيتم توزيعها على الفرق الحالية تلقائياً)</h3>
         <div class="upload-form">
             <div class="form-group"><label>ملف CSV/Excel (عدادات جديدة):</label><input type="file" id="appendCsvFile" accept=".csv,.xlsx"></div>
             <button onclick="appendOnly()">➕ إضافة وتوزيع</button>
@@ -111,12 +111,12 @@
     </div>
     
     <div class="teams-table">
-        <h3>📋 الفرق والروابط (روابط ثابتة لا تنتهي)</h3>
+        <h3>📋 الفرق والروابط </h3>
         <table id="teamsTable"><thead><th>الفرقة</th><th>العدادات</th><th>تم</th><th>متبقي</th><th>الرابط</th></thead><tbody></tbody></table>
     </div>
     
     <div class="log-area" id="logArea">📋 سجل العمليات...</div>
-    <div class="footer">✅ الروابط ثابتة ولا تنتهي | يمكن للفني تسجيل رقم المخالفة عند إتمام العداد | رقم العداد هو مفتاح الخريطة</div>
+    <div class="footer">✅ يمكن للفني تسجيل رقم المخالفة عند إتمام العداد مع تحيات إدارة المخالفات</div>
 </div>
 
 <script>
