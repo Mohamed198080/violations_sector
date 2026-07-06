@@ -8,6 +8,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
+        /* نفس الأنماط السابقة - تم حذفها للاختصار، يمكنك إعادة استخدامها */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: #f0f2f5; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; }
@@ -205,7 +206,6 @@
                                     if (val) extra[headerName] = val;
                                 }
                             }
-                            // حذف أي حقل meter_id من extra لتجنب التعارض
                             if (extra.meter_id) delete extra.meter_id;
                             if (extra['meter id']) delete extra['meter id'];
                             meters.push({
@@ -227,7 +227,6 @@
                     if (rows.length < 2) return reject(new Error('Excel فارغ'));
                     const headers = rows[0].map(c => String(c).trim().toLowerCase());
                     let colIdx = { id: -1, lat: -1, lng: -1, action: -1 };
-                    // محاولة العثور على الأعمدة
                     for (let i=0; i<headers.length; i++) {
                         const h = headers[i];
                         if (h.match(/(meter|id|رقم|meterid)/i)) colIdx.id = i;
@@ -235,7 +234,6 @@
                         if (h.match(/(lng|lon|طول|x|longitude)/i)) colIdx.lng = i;
                         if (h.match(/(action|الإجراء|الاجراء)/i)) colIdx.action = i;
                     }
-                    // إذا لم يتم العثور على عمود meterId، نعتبر العمود الأول هو meterId
                     if (colIdx.id === -1 && headers.length >= 1) {
                         colIdx.id = 0;
                     }
@@ -245,7 +243,6 @@
                     for (let i=1; i<rows.length; i++) {
                         const row = rows[i];
                         if (!row || row.length < 3) continue;
-                        // التأكد من أن العمود المحدد موجود
                         const meterId = (colIdx.id !== -1 && row[colIdx.id] !== undefined && row[colIdx.id] !== '') 
                             ? String(row[colIdx.id]).trim() 
                             : '';
@@ -331,7 +328,6 @@
             for (let [k,v] of Object.entries(meter.extra)) if(v) extraHtml += `<span style="font-weight:bold;">${k}:</span> ${v}<br>`; 
             extraHtml += '</div>'; 
         } 
-        // تأكد من عرض meterId الصحيح
         return `<div style="text-align:center; min-width:200px;">
                     <b>🚦 العداد: ${meter.meterId}</b><br>
                     📋 الإجراء: ${actionText}<br>
@@ -387,35 +383,121 @@
         } catch(err) { msgDiv.innerHTML = `❌ ${err.message}`; log(err.message); }
     }
     
+    // ========== دوال التصدير المعدلة ==========
+    
+    // تصدير الجدول الرئيسي (meters الحالية)
     async function exportToExcel() {
         const data = await loadFromGoogleSheets();
         if (!data?.meters) { alert('لا توجد بيانات'); return; }
-        const rows = data.meters.map(m => {
-            let base = { 
-                'رقم العداد': m.meterId, 
-                'خط العرض': m.lat, 
-                'خط الطول': m.lng, 
-                'الإجراء': m.action, 
-                'الحالة': m.status==='completed'?'تم':'قيد', 
-                'وقت الإنجاز': m.completedAt||'', 
-                'رقم المخالفة': m.violationNumber||'', 
-                'الفرقة': data.teams.find(t=>t.id===m.teamId)?.name||'' 
-            };
+        
+        // جمع كل المفاتيح الإضافية من جميع الصفوف
+        const allExtraKeys = new Set();
+        data.meters.forEach(m => {
             if (m.extra) {
-                // إزالة أي حقل meter_id من extra قبل التصدير
-                let cleanExtra = {...m.extra};
-                delete cleanExtra.meter_id;
-                delete cleanExtra['meter id'];
-                Object.assign(base, cleanExtra);
+                Object.keys(m.extra).forEach(k => allExtraKeys.add(k));
             }
-            return base;
         });
+        const extraKeys = Array.from(allExtraKeys); // ترتيب المفاتيح حسب الظهور (قد لا يكون محدداً، لكننا نستخدم الترتيب الأبجدي أو حسب الظهور الأول)
+        // للحفاظ على ترتيب ثابت، نرتب المفاتيح أبجدياً (أو حسب أول ظهور)
+        // لكن الأفضل أن نرتبها حسب أول ظهور في أول صف يحتوي عليها
+        // سنقوم بترتيبها حسب الظهور في أول صف يحتوي على extra
+        if (data.meters.length > 0) {
+            const firstExtra = data.meters.find(m => m.extra && Object.keys(m.extra).length > 0);
+            if (firstExtra) {
+                const firstKeys = Object.keys(firstExtra.extra);
+                extraKeys.sort((a,b) => {
+                    const ia = firstKeys.indexOf(a);
+                    const ib = firstKeys.indexOf(b);
+                    if (ia === -1 && ib === -1) return a.localeCompare(b);
+                    if (ia === -1) return 1;
+                    if (ib === -1) return -1;
+                    return ia - ib;
+                });
+            }
+        }
+        
+        const rows = data.meters.map(m => {
+            const row = {
+                'رقم العداد': m.meterId,
+                'خط العرض': m.lat,
+                'خط الطول': m.lng,
+                'الإجراء': m.action,
+                'الحالة': m.status === 'completed' ? 'تم' : 'قيد',
+                'تاريخ الإنجاز': m.completedAt || '',
+                'رقم المخالفة': m.violationNumber || '',
+                'الفريق': data.teams.find(t => t.id === m.teamId)?.name || ''
+            };
+            // إضافة الأعمدة الإضافية
+            if (m.extra) {
+                extraKeys.forEach(k => {
+                    row[k] = m.extra[k] || '';
+                });
+            }
+            return row;
+        });
+        
         const ws = XLSX.utils.json_to_sheet(rows);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'تقرير');
-        XLSX.writeFile(wb, `report_${new Date().toISOString().slice(0,19)}.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, 'العدادات');
+        XLSX.writeFile(wb, `meters_${new Date().toISOString().slice(0,19)}.xlsx`);
     }
     
+    // تصدير تقرير الأرشيف حسب الفترة
+    function exportReportToExcel() {
+        if (!lastReportData || lastReportData.length === 0) { alert('لا توجد بيانات للتصدير'); return; }
+        
+        // جمع كل المفاتيح الإضافية
+        const allExtraKeys = new Set();
+        lastReportData.forEach(r => {
+            if (r.extra) {
+                Object.keys(r.extra).forEach(k => allExtraKeys.add(k));
+            }
+        });
+        const extraKeys = Array.from(allExtraKeys);
+        if (lastReportData.length > 0) {
+            const firstExtra = lastReportData.find(r => r.extra && Object.keys(r.extra).length > 0);
+            if (firstExtra) {
+                const firstKeys = Object.keys(firstExtra.extra);
+                extraKeys.sort((a,b) => {
+                    const ia = firstKeys.indexOf(a);
+                    const ib = firstKeys.indexOf(b);
+                    if (ia === -1 && ib === -1) return a.localeCompare(b);
+                    if (ia === -1) return 1;
+                    if (ib === -1) return -1;
+                    return ia - ib;
+                });
+            }
+        }
+        
+        const rows = lastReportData.map(r => {
+            const row = {
+                'رقم العداد': r.meterId,
+                'خط العرض': r.lat,
+                'خط الطول': r.lng,
+                'الإجراء': r.action,
+                'الحالة': r.status === 'completed' ? 'تم' : r.status,
+                'تاريخ الإنجاز': r.completedAt ? new Date(r.completedAt).toLocaleString() : '',
+                'الفريق': r.teamId,
+                'رقم المخالفة': r.violationNumber,
+            };
+            // إضافة الأعمدة الإضافية
+            if (r.extra) {
+                extraKeys.forEach(k => {
+                    row[k] = r.extra[k] || '';
+                });
+            }
+            // إضافة تاريخ الأرشفة في النهاية
+            row['تاريخ الأرشفة'] = r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : '';
+            return row;
+        });
+        
+        const ws = XLSX.utils.json_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'تقرير الأرشيف');
+        XLSX.writeFile(wb, `archive_report_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+    
+    // باقي الدوال (refreshAllTokens, searchMeterHistory, archiveCompleted, generateReport) كما هي دون تغيير
     async function refreshAllTokens() {
         if (!confirm('سيتم تجديد روابط الفرق. هل تريد المتابعة؟')) return;
         try {
@@ -531,31 +613,6 @@
             btn.innerText = '📊 استخراج التقرير';
             btn.disabled = false;
         }
-    }
-    
-    function exportReportToExcel() {
-        if (!lastReportData || lastReportData.length === 0) { alert('لا توجد بيانات للتصدير'); return; }
-        const rows = lastReportData.map(r => {
-            let cleanExtra = {...r.extra};
-            delete cleanExtra.meter_id;
-            delete cleanExtra['meter id'];
-            return {
-                'رقم العداد': r.meterId,
-                'خط العرض': r.lat,
-                'خط الطول': r.lng,
-                'الإجراء': r.action,
-                'الحالة': r.status === 'completed' ? 'تم' : r.status,
-                'تاريخ الإنجاز': r.completedAt ? new Date(r.completedAt).toLocaleString() : '',
-                'الفريق': r.teamId,
-                'رقم المخالفة': r.violationNumber,
-                'بيانات إضافية': Object.entries(cleanExtra).map(([k,v])=>`${k}:${v}`).join('; '),
-                'تاريخ الأرشفة': r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : ''
-            };
-        });
-        const ws = XLSX.utils.json_to_sheet(rows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'تقرير الأرشيف');
-        XLSX.writeFile(wb, `archive_report_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
     
     initMap();
