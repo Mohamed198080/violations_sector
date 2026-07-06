@@ -48,7 +48,7 @@
 <body>
 <div class="container">
     <div class="header">
-        <h1>📊( مدير إدارة المخالفات)</h1>
+        <h1>📊 مدير التوزيع الجغرافي (روابط ثابتة + مخالفات)</h1>
         <div>
             <button onclick="refreshData()">🔄 تحديث</button>
             <button onclick="exportToExcel()" style="background:#27ae60;">📎 Excel</button>
@@ -71,7 +71,7 @@
     
     <!-- قسم إضافة عدادات جديدة مع توزيع تلقائي -->
     <div class="upload-area">
-        <h3>➕ إضافة عدادات جديدة (سيتم توزيعها على الفرق الحالية تلقائياً )</h3>
+        <h3>➕ إضافة عدادات جديدة (سيتم توزيعها على الفرق الحالية تلقائياً - يُسمح بتكرار رقم العداد)</h3>
         <div class="upload-form">
             <div class="form-group"><label>ملف CSV/Excel (عدادات جديدة):</label><input type="file" id="appendCsvFile" accept=".csv,.xlsx"></div>
             <button onclick="appendOnly()">➕ إضافة وتوزيع</button>
@@ -81,7 +81,7 @@
     
     <!-- قسم البحث -->
     <div class="search-area">
-        <h3>🔍 البحث عن تاريخ عداد </h3>
+        <h3>🔍 البحث عن تاريخ عداد (رقم العداد هو المفتاح)</h3>
         <div class="search-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
             <div class="form-group"><label>رقم العداد:</label><input type="text" id="searchMeterId" placeholder="أدخل رقم العداد"></div>
             <button onclick="searchMeterHistory()" style="margin-top:6px;">🔍 بحث</button>
@@ -116,16 +116,16 @@
     </div>
     
     <div class="teams-table">
-        <h3>📋 الفرق والروابط </h3>
+        <h3>📋 الفرق والروابط (روابط ثابتة لا تنتهي)</h3>
         <table id="teamsTable"><thead><th>الفرقة</th><th>العدادات</th><th>تم</th><th>متبقي</th><th>الرابط</th></thead><tbody></tbody></table>
     </div>
     
     <div class="log-area" id="logArea">📋 سجل العمليات...</div>
-    <div class="footer">✅ يمكن للفني تسجيل رقم المخالفة عند إتمام العداد | مع تحيات إداررة المخالفات</div>
+    <div class="footer">✅ الروابط ثابتة ولا تنتهي | يمكن للفني تسجيل رقم المخالفة عند إتمام العداد | رقم العداد هو مفتاح الخريطة</div>
 </div>
 
 <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzNrwFLfV5SZxf4_uAeZXLU91xBmJCcrZo64DhtIquwAig1e4q9vQXmOIllQIChEB1d/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwKDtKTnN0WoSC7iuPlCIkuwMzxyRtyzWBbrVI1kVOPuohbtbbN5ircUg4uildA_Cic/exec';
     let map, markersLayer, polygonLayer, currentTileLayer = null;
     let currentLocationMarker = null, currentLocationCircle = null;
     let searchMap = null, searchMarker = null;
@@ -149,6 +149,7 @@
     
     function log(msg) { const logDiv = document.getElementById('logArea'); logDiv.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`; logDiv.scrollTop = logDiv.scrollHeight; console.log(msg); }
     
+    // دالة محسنة لقراءة CSV و Excel مع ضمان قراءة meter_id بشكل صحيح
     async function parseCSVorExcel(file) {
         return new Promise((resolve, reject) => {
             const ext = file.name.split('.').pop().toLowerCase();
@@ -191,7 +192,7 @@
                         }
                         parts.push(cur.trim());
                         if (parts.length < 3) continue;
-                        const meterId = parts[colIdx.id]?.replace(/["']/g, '');
+                        const meterId = String(parts[colIdx.id]?.replace(/["']/g, '').trim() || '');
                         const lat = parseFloat(parts[colIdx.lat]?.replace(/["']/g, ''));
                         const lng = parseFloat(parts[colIdx.lng]?.replace(/["']/g, ''));
                         let actionRaw = (colIdx.action !== -1 && parts[colIdx.action]) ? parts[colIdx.action].replace(/["']/g, '') : '';
@@ -206,7 +207,7 @@
                             }
                             meters.push({
                                 id: crypto.randomUUID(),
-                                meterId: String(meterId),
+                                meterId: meterId,
                                 lat, lng,
                                 action: actionRaw || 'unknown',
                                 status: 'pending', completedAt: null, teamId: null,
@@ -223,6 +224,7 @@
                     if (rows.length < 2) return reject(new Error('Excel فارغ'));
                     const headers = rows[0].map(c => String(c).trim().toLowerCase());
                     let colIdx = { id: -1, lat: -1, lng: -1, action: -1 };
+                    // محاولة العثور على الأعمدة
                     for (let i=0; i<headers.length; i++) {
                         const h = headers[i];
                         if (h.match(/(meter|id|رقم|meterid)/i)) colIdx.id = i;
@@ -230,26 +232,36 @@
                         if (h.match(/(lng|lon|طول|x|longitude)/i)) colIdx.lng = i;
                         if (h.match(/(action|الإجراء|الاجراء)/i)) colIdx.action = i;
                     }
-                    if (colIdx.id === -1 || colIdx.lat === -1 || colIdx.lng === -1) reject(new Error('الأعمدة الأساسية غير موجودة'));
+                    // إذا لم يتم العثور على عمود meterId، نعتبر العمود الأول هو meterId
+                    if (colIdx.id === -1 && headers.length >= 1) {
+                        colIdx.id = 0;
+                    }
+                    if (colIdx.lat === -1 || colIdx.lng === -1) {
+                        return reject(new Error('لم يتم العثور على أعمدة خطوط الطول والعرض'));
+                    }
                     for (let i=1; i<rows.length; i++) {
                         const row = rows[i];
                         if (!row || row.length < 3) continue;
-                        const meterId = row[colIdx.id] ? String(row[colIdx.id]).trim() : '';
+                        // التأكد من أن العمود المحدد موجود
+                        const meterId = (colIdx.id !== -1 && row[colIdx.id] !== undefined && row[colIdx.id] !== '') 
+                            ? String(row[colIdx.id]).trim() 
+                            : '';
                         const lat = parseFloat(row[colIdx.lat]);
                         const lng = parseFloat(row[colIdx.lng]);
-                        const actionRaw = (colIdx.action !== -1 && row[colIdx.action]) ? String(row[colIdx.action]).trim() : '';
+                        const actionRaw = (colIdx.action !== -1 && row[colIdx.action] !== undefined) ? String(row[colIdx.action]).trim() : '';
                         if (meterId && !isNaN(lat) && !isNaN(lng)) {
                             let extra = {};
                             for (let j=0; j<row.length; j++) {
                                 if (j !== colIdx.id && j !== colIdx.lat && j !== colIdx.lng && j !== colIdx.action) {
                                     let headerName = (j < headers.length) ? headers[j] : `col_${j+1}`;
-                                    let val = row[j] ? String(row[j]).trim() : '';
+                                    let val = row[j] !== undefined ? String(row[j]).trim() : '';
                                     if (val) extra[headerName] = val;
                                 }
                             }
                             meters.push({
                                 id: crypto.randomUUID(),
-                                meterId, lat, lng,
+                                meterId,
+                                lat, lng,
                                 action: actionRaw || 'unknown',
                                 status: 'pending', completedAt: null, teamId: null,
                                 violationNumber: '',
@@ -336,7 +348,7 @@
         const csvFile = document.getElementById('appendCsvFile').files[0];
         if (!csvFile) { alert('اختر ملف CSV'); return; }
         const msgDiv = document.getElementById('appendMsg');
-        msgDiv.innerHTML = '⏳ جاري إضافة العدادات الجديدة وتوزيعها ...';
+        msgDiv.innerHTML = '⏳ جاري إضافة العدادات الجديدة وتوزيعها (يُسمح بتكرار الأرقام)...';
         try {
             const newMeters = await parseCSVorExcel(csvFile);
             if (!newMeters.length) throw new Error('لا توجد عدادات صالحة');
