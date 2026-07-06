@@ -120,7 +120,7 @@
 </div>
 
 <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyHgwrHtst-Hfa3IgovLE0RRNpfTSb4SSSa53GKBhKaowtW4XrPJxW1TJN9vHFizbnC/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwxBhv5mJGhtML4ZFkJoehlyZ_SxTv1-wgPHvsh9hd5I2r82zwqw6ChFYhCY9GIVy5F/exec';
     let map, markersLayer, polygonLayer, currentTileLayer = null;
     let currentLocationMarker = null, currentLocationCircle = null;
     let searchMap = null, searchMarker = null;
@@ -144,6 +144,7 @@
     
     function log(msg) { const logDiv = document.getElementById('logArea'); logDiv.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`; logDiv.scrollTop = logDiv.scrollHeight; console.log(msg); }
     
+    // دالة قراءة الملفات مع الحفاظ على أسماء الأعمدة الأصلية
     async function parseCSVorExcel(file) {
         return new Promise((resolve, reject) => {
             const ext = file.name.split('.').pop().toLowerCase();
@@ -372,13 +373,14 @@
         } catch(err) { msgDiv.innerHTML = `❌ ${err.message}`; log(err.message); }
     }
     
-    // ========== دوال التصدير المعدلة ==========
+    // ========== دوال التصدير المحسّنة ==========
     
+    // تصدير الجدول الرئيسي مع الحفاظ على ترتيب الأعمدة الإضافية
     async function exportToExcel() {
         const data = await loadFromGoogleSheets();
         if (!data?.meters) { alert('لا توجد بيانات'); return; }
         
-        // جمع المفاتيح الإضافية بالترتيب
+        // جمع المفاتيح الإضافية بالترتيب (أول ظهور)
         const allExtraKeys = [];
         const seen = new Set();
         for (const m of data.meters) {
@@ -393,6 +395,7 @@
         }
         
         const rows = data.meters.map(m => {
+            // الأعمدة الأساسية بنفس أسماء الملف الأصلي
             const row = {
                 'meter_id': m.meterId,
                 'lat': m.lat,
@@ -403,6 +406,7 @@
                 'teamId': m.teamId || '',
                 'violationNumber': m.violationNumber || ''
             };
+            // إضافة الأعمدة الإضافية بالترتيب المحفوظ
             if (m.extra) {
                 allExtraKeys.forEach(k => {
                     row[k] = m.extra[k] || '';
@@ -417,10 +421,10 @@
         XLSX.writeFile(wb, `meters_${new Date().toISOString().slice(0,19)}.xlsx`);
     }
     
+    // تصدير تقرير الأرشيف مع الحفاظ على الترتيب
     function exportReportToExcel() {
         if (!lastReportData || lastReportData.length === 0) { alert('لا توجد بيانات للتصدير'); return; }
         
-        // جمع المفاتيح الإضافية بالترتيب
         const allExtraKeys = [];
         const seen = new Set();
         for (const r of lastReportData) {
@@ -460,7 +464,8 @@
         XLSX.writeFile(wb, `archive_report_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
     
-    // باقي الدوال (refreshAllTokens, searchMeterHistory, archiveCompleted, generateReport)
+    // ========== باقي الدوال ==========
+    
     async function refreshAllTokens() {
         if (!confirm('سيتم تجديد روابط الفرق. هل تريد المتابعة؟')) return;
         try {
