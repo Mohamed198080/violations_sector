@@ -54,7 +54,7 @@
 <body>
 <div class="container">
     <div class="header">
-        <h1>📊 مدير التوزيع الجغرافي (روابط ثابتة + مخالفات)</h1>
+        <h1>📊  حائل - مدير إدارة المخالفات</h1>
         <div>
             <button onclick="refreshData()">🔄 تحديث</button>
             <button onclick="exportToExcel()" style="background:#27ae60;">📎 Excel</button>
@@ -65,7 +65,7 @@
     
     <!-- قسم استبدال كامل -->
     <div class="upload-area">
-        <h3>🔄 استبدال كامل (أرشفة المنجز فقط + توزيع جديد)</h3>
+        <h3>🔄 استبدال كامل (أرشفة المنجز )</h3>
         <div class="upload-form">
             <div class="form-group"><label>ملف CSV/Excel (عدادات جديدة):</label><input type="file" id="fullCsvFile" accept=".csv,.xlsx" onchange="analyzeFullFile(this)"></div>
             <div class="form-group"><label>ملف KML (مناطق جديدة):</label><input type="file" id="fullKmlFile" accept=".kml"></div>
@@ -79,7 +79,7 @@
     
     <!-- قسم إضافة عدادات جديدة مع توزيع تلقائي -->
     <div class="upload-area">
-        <h3>➕ إضافة عدادات جديدة (سيتم توزيعها على الفرق الحالية تلقائياً - يُسمح بتكرار رقم العداد)</h3>
+        <h3>➕ إضافة عدادات جديدة (سيتم توزيعها على الفرق الحالية تلقائياً )</h3>
         <div class="upload-form">
             <div class="form-group"><label>ملف CSV/Excel (عدادات جديدة):</label><input type="file" id="appendCsvFile" accept=".csv,.xlsx" onchange="analyzeAppendFile(this)"></div>
             <button onclick="appendOnly()">➕ إضافة وتوزيع</button>
@@ -91,7 +91,7 @@
     
     <!-- باقي الأقسام (بحث، تقرير، خريطة، جدول) كما هي -->
     <div class="search-area">
-        <h3>🔍 البحث عن تاريخ عداد (رقم العداد هو المفتاح)</h3>
+        <h3>🔍 البحث عن تاريخ عداد </h3>
         <div class="search-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
             <div class="form-group"><label>رقم العداد:</label><input type="text" id="searchMeterId" placeholder="أدخل رقم العداد"></div>
             <button onclick="searchMeterHistory()" style="margin-top:6px;">🔍 بحث</button>
@@ -124,12 +124,12 @@
     </div>
     
     <div class="teams-table">
-        <h3>📋 الفرق والروابط (روابط ثابتة لا تنتهي)</h3>
+        <h3>📋 الفرق والروابط </h3>
         <table id="teamsTable"><thead><th>الفرقة</th><th>العدادات</th><th>تم</th><th>متبقي</th><th>الرابط</th></thead><tbody></tbody></table>
     </div>
     
     <div class="log-area" id="logArea">📋 سجل العمليات...</div>
-    <div class="footer">✅ الروابط ثابتة ولا تنتهي | يمكن للفني تسجيل رقم المخالفة عند إتمام العداد | رقم العداد هو مفتاح الخريطة</div>
+    <div class="footer">✅  يمكن للفني تسجيل رقم المخالفة عند إتمام العداد | مع تحيات إدارة المخالفات (حائل)</div>
 </div>
 
 <script>
