@@ -8,7 +8,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        /* نفس الأنماط السابقة - تم حذفها للاختصار، يمكنك إعادة استخدامها */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: #f0f2f5; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; }
@@ -121,7 +120,7 @@
 </div>
 
 <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyTmvGTszxXjyBSx4bDAVru28lMoVCvC5vsZjKee9SmkexEwZQpE-cvod-7K7J9IcF7/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzfsJdugm6tMBSbLa5KwKvOTyrIqcD44DovS7vneq8cSgZbW9tSNvyhtjxDBbpUXy2v/exec';
     let map, markersLayer, polygonLayer, currentTileLayer = null;
     let currentLocationMarker = null, currentLocationCircle = null;
     let searchMap = null, searchMarker = null;
@@ -205,8 +204,8 @@
                                     if (val) extra[headerName] = val;
                                 }
                             }
-                            if (extra.meter_id) delete extra.meter_id;
                             if (extra['meter id']) delete extra['meter id'];
+                            if (extra['meterid']) delete extra['meterid'];
                             meters.push({
                                 id: crypto.randomUUID(),
                                 meterId: meterId,
@@ -255,8 +254,8 @@
                                     if (val) extra[headerName] = val;
                                 }
                             }
-                            if (extra.meter_id) delete extra.meter_id;
                             if (extra['meter id']) delete extra['meter id'];
+                            if (extra['meterid']) delete extra['meterid'];
                             meters.push({
                                 id: crypto.randomUUID(),
                                 meterId,
@@ -325,7 +324,6 @@
             // استخدام الترتيب المخزن إن وجد
             let keys = Object.keys(meter.extra);
             if (columnOrder.length) {
-                // ترتيب المفاتيح حسب columnOrder مع تجاهل الأعمدة الأساسية التي قد تكون موجودة
                 const extraKeys = keys.filter(k => columnOrder.includes(k));
                 const orderedKeys = columnOrder.filter(k => extraKeys.includes(k));
                 const remainingKeys = keys.filter(k => !orderedKeys.includes(k));
@@ -366,16 +364,12 @@
             if (!polygons.length) throw new Error('لا توجد مضلعات');
             const { teams, meters: assigned } = assignMetersToTeams(newMeters, polygons);
             
-            // استخراج ترتيب الأعمدة الأساسية والإضافية
-            const columnOrder = originalHeaders.filter(h => h.toLowerCase() !== 'meter_id' && h.toLowerCase() !== 'lat' && h.toLowerCase() !== 'lng' && h.toLowerCase() !== 'action');
-            // نضع الأعمدة الأساسية أولاً
-            const fullOrder = ['meter_id', 'lat', 'lng', 'action', ...columnOrder];
-            
+            // نرسل ترتيب الأعمدة كاملاً
             const payload = new URLSearchParams({ 
                 action: 'uploadNewData', 
                 metersJson: JSON.stringify(assigned), 
                 teamsJson: JSON.stringify(teams),
-                columnOrder: JSON.stringify(fullOrder)
+                columnOrder: JSON.stringify(originalHeaders)
             }).toString();
             const res = await fetch(SCRIPT_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:payload });
             const result = await res.json();
@@ -393,14 +387,10 @@
             const { meters: newMeters, originalHeaders } = await parseCSVorExcel(csvFile);
             if (!newMeters.length) throw new Error('لا توجد عدادات صالحة');
             
-            // استخراج ترتيب الأعمدة الإضافية
-            const columnOrder = originalHeaders.filter(h => h.toLowerCase() !== 'meter_id' && h.toLowerCase() !== 'lat' && h.toLowerCase() !== 'lng' && h.toLowerCase() !== 'action');
-            const fullOrder = ['meter_id', 'lat', 'lng', 'action', ...columnOrder];
-            
             const payload = new URLSearchParams({ 
                 action: 'appendMeters', 
                 metersJson: JSON.stringify(newMeters),
-                columnOrder: JSON.stringify(fullOrder)
+                columnOrder: JSON.stringify(originalHeaders)
             }).toString();
             const res = await fetch(SCRIPT_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:payload });
             const result = await res.json();
@@ -411,14 +401,14 @@
         } catch(err) { msgDiv.innerHTML = `❌ ${err.message}`; log(err.message); }
     }
     
-    // ========== دوال التصدير مع الحفاظ على الترتيب ==========
+    // ========== دوال التصدير مع الحفاظ على الترتيب والأسماء الأصلية ==========
     
     async function exportToExcel() {
         const data = await loadFromGoogleSheets();
         if (!data?.meters) { alert('لا توجد بيانات'); return; }
         
-        // استخدام الترتيب المخزن أو إنشاء ترتيب افتراضي
-        let order = columnOrder.length ? columnOrder : ['meter_id', 'lat', 'lng', 'action', 'status', 'completedAt', 'teamId', 'violationNumber'];
+        // استخدام الترتيب المخزن، أو إنشاء ترتيب افتراضي
+        let order = columnOrder.length ? columnOrder : ['meter id', 'lat', 'lng', 'action', 'status', 'completedAt', 'teamId', 'violationNumber'];
         // إضافة أي مفاتيح إضافية غير موجودة في order
         const allExtraKeys = new Set();
         for (const m of data.meters) {
@@ -432,18 +422,30 @@
         
         const rows = data.meters.map(m => {
             const row = {};
-            // نضع الأعمدة بالترتيب
             for (const key of order) {
-                if (key === 'meter_id') row[key] = m.meterId;
-                else if (key === 'lat') row[key] = m.lat;
-                else if (key === 'lng') row[key] = m.lng;
-                else if (key === 'action') row[key] = m.action;
-                else if (key === 'status') row[key] = m.status === 'completed' ? 'تم' : 'قيد';
-                else if (key === 'completedAt') row[key] = m.completedAt || '';
-                else if (key === 'teamId') row[key] = m.teamId || '';
-                else if (key === 'violationNumber') row[key] = m.violationNumber || '';
-                else if (m.extra && m.extra[key] !== undefined) row[key] = m.extra[key];
-                else row[key] = '';
+                const keyLower = key.toLowerCase();
+                // تحديد العمود الأساسي بناءً على الاسم المخزن
+                if (keyLower === 'meter id' || keyLower === 'meterid') {
+                    row[key] = m.meterId;
+                } else if (keyLower === 'lat' || keyLower === 'latitude') {
+                    row[key] = m.lat;
+                } else if (keyLower === 'lng' || keyLower === 'longitude') {
+                    row[key] = m.lng;
+                } else if (keyLower === 'action') {
+                    row[key] = m.action;
+                } else if (keyLower === 'status') {
+                    row[key] = m.status === 'completed' ? 'تم' : 'قيد';
+                } else if (keyLower === 'completedat' || keyLower === 'completedAt') {
+                    row[key] = m.completedAt || '';
+                } else if (keyLower === 'teamid' || keyLower === 'teamId') {
+                    row[key] = m.teamId || '';
+                } else if (keyLower === 'violationnumber' || keyLower === 'violationNumber') {
+                    row[key] = m.violationNumber || '';
+                } else if (m.extra && m.extra[key] !== undefined) {
+                    row[key] = m.extra[key];
+                } else {
+                    row[key] = '';
+                }
             }
             return row;
         });
@@ -457,7 +459,7 @@
     function exportReportToExcel() {
         if (!lastReportData || lastReportData.length === 0) { alert('لا توجد بيانات للتصدير'); return; }
         
-        let order = columnOrder.length ? columnOrder : ['meter_id', 'lat', 'lng', 'action', 'status', 'completedAt', 'teamId', 'violationNumber'];
+        let order = columnOrder.length ? columnOrder : ['meter id', 'lat', 'lng', 'action', 'status', 'completedAt', 'teamId', 'violationNumber'];
         const allExtraKeys = new Set();
         for (const r of lastReportData) {
             if (r.extra) {
@@ -467,23 +469,35 @@
         for (const k of allExtraKeys) {
             if (!order.includes(k)) order.push(k);
         }
-        // إضافة archiveTimestamp في النهاية
         if (!order.includes('archiveTimestamp')) order.push('archiveTimestamp');
         
         const rows = lastReportData.map(r => {
             const row = {};
             for (const key of order) {
-                if (key === 'meter_id') row[key] = r.meterId;
-                else if (key === 'lat') row[key] = r.lat;
-                else if (key === 'lng') row[key] = r.lng;
-                else if (key === 'action') row[key] = r.action;
-                else if (key === 'status') row[key] = r.status === 'completed' ? 'تم' : r.status;
-                else if (key === 'completedAt') row[key] = r.completedAt ? new Date(r.completedAt).toLocaleString() : '';
-                else if (key === 'teamId') row[key] = r.teamId || '';
-                else if (key === 'violationNumber') row[key] = r.violationNumber || '';
-                else if (key === 'archiveTimestamp') row[key] = r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : '';
-                else if (r.extra && r.extra[key] !== undefined) row[key] = r.extra[key];
-                else row[key] = '';
+                const keyLower = key.toLowerCase();
+                if (keyLower === 'meter id' || keyLower === 'meterid') {
+                    row[key] = r.meterId;
+                } else if (keyLower === 'lat' || keyLower === 'latitude') {
+                    row[key] = r.lat;
+                } else if (keyLower === 'lng' || keyLower === 'longitude') {
+                    row[key] = r.lng;
+                } else if (keyLower === 'action') {
+                    row[key] = r.action;
+                } else if (keyLower === 'status') {
+                    row[key] = r.status === 'completed' ? 'تم' : r.status;
+                } else if (keyLower === 'completedat' || keyLower === 'completedAt') {
+                    row[key] = r.completedAt ? new Date(r.completedAt).toLocaleString() : '';
+                } else if (keyLower === 'teamid' || keyLower === 'teamId') {
+                    row[key] = r.teamId || '';
+                } else if (keyLower === 'violationnumber' || keyLower === 'violationNumber') {
+                    row[key] = r.violationNumber || '';
+                } else if (keyLower === 'archivetimestamp' || keyLower === 'archiveTimestamp') {
+                    row[key] = r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : '';
+                } else if (r.extra && r.extra[key] !== undefined) {
+                    row[key] = r.extra[key];
+                } else {
+                    row[key] = '';
+                }
             }
             return row;
         });
@@ -586,8 +600,8 @@
                 return;
             }
             resultDiv.innerHTML = `<div style="color:green;">✅ تم العثور على ${data.count} سجل</div>`;
-            // عرض الجدول في الواجهة
-            let order = columnOrder.length ? columnOrder : ['meter_id', 'lat', 'lng', 'action', 'status', 'completedAt', 'teamId', 'violationNumber'];
+            // عرض الجدول في الواجهة بنفس الترتيب
+            let order = columnOrder.length ? columnOrder : ['meter id', 'lat', 'lng', 'action', 'status', 'completedAt', 'teamId', 'violationNumber'];
             const allExtraKeys = new Set();
             for (const r of data.rows) {
                 if (r.extra) {
@@ -608,15 +622,16 @@
                 html += `<tr>`;
                 for (const col of order) {
                     let val = '';
-                    if (col === 'meter_id') val = row.meterId;
-                    else if (col === 'lat') val = row.lat;
-                    else if (col === 'lng') val = row.lng;
-                    else if (col === 'action') val = row.action;
-                    else if (col === 'status') val = row.status === 'completed' ? 'تم' : row.status;
-                    else if (col === 'completedAt') val = row.completedAt ? new Date(row.completedAt).toLocaleString() : '';
-                    else if (col === 'teamId') val = row.teamId;
-                    else if (col === 'violationNumber') val = row.violationNumber;
-                    else if (col === 'archiveTimestamp') val = row.archiveTimestamp ? new Date(row.archiveTimestamp).toLocaleString() : '';
+                    const colLower = col.toLowerCase();
+                    if (colLower === 'meter id' || colLower === 'meterid') val = row.meterId;
+                    else if (colLower === 'lat' || colLower === 'latitude') val = row.lat;
+                    else if (colLower === 'lng' || colLower === 'longitude') val = row.lng;
+                    else if (colLower === 'action') val = row.action;
+                    else if (colLower === 'status') val = row.status === 'completed' ? 'تم' : row.status;
+                    else if (colLower === 'completedat' || colLower === 'completedAt') val = row.completedAt ? new Date(row.completedAt).toLocaleString() : '';
+                    else if (colLower === 'teamid' || colLower === 'teamId') val = row.teamId;
+                    else if (colLower === 'violationnumber' || colLower === 'violationNumber') val = row.violationNumber;
+                    else if (colLower === 'archivetimestamp' || colLower === 'archiveTimestamp') val = row.archiveTimestamp ? new Date(row.archiveTimestamp).toLocaleString() : '';
                     else if (row.extra && row.extra[col] !== undefined) val = row.extra[col];
                     html += `<td>${val}</td>`;
                 }
