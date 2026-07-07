@@ -8,6 +8,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
+        /* نفس الأنماط السابقة - تم حذفها للاختصار، يمكنك إعادة استخدامها */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background: #f0f2f5; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; }
@@ -48,7 +49,7 @@
 <body>
 <div class="container">
     <div class="header">
-        <h1>📊 مدير التوزيع الجغرافي </h1>
+        <h1>📊 مدير التوزيع الجغرافي (روابط ثابتة + مخالفات)</h1>
         <div>
             <button onclick="refreshData()">🔄 تحديث</button>
             <button onclick="exportToExcel()" style="background:#27ae60;">📎 Excel</button>
@@ -69,7 +70,7 @@
     </div>
     
     <div class="upload-area">
-        <h3>➕ إضافة عدادات جديدة (سيتم توزيعها على الفرق الحالية تلقائياً)</h3>
+        <h3>➕ إضافة عدادات جديدة (سيتم توزيعها على الفرق الحالية تلقائياً - يُسمح بتكرار رقم العداد)</h3>
         <div class="upload-form">
             <div class="form-group"><label>ملف CSV/Excel (عدادات جديدة):</label><input type="file" id="appendCsvFile" accept=".csv,.xlsx"></div>
             <button onclick="appendOnly()">➕ إضافة وتوزيع</button>
@@ -111,20 +112,21 @@
     </div>
     
     <div class="teams-table">
-        <h3>📋 الفرق والروابط </h3>
+        <h3>📋 الفرق والروابط (روابط ثابتة لا تنتهي)</h3>
         <table id="teamsTable"><thead><th>الفرقة</th><th>العدادات</th><th>تم</th><th>متبقي</th><th>الرابط</th></thead><tbody></tbody></table>
     </div>
     
     <div class="log-area" id="logArea">📋 سجل العمليات...</div>
-    <div class="footer">✅ يمكن للفني تسجيل رقم المخالفة عند إتمام العداد مع تحيات إدارة المخالفات</div>
+    <div class="footer">✅ الروابط ثابتة ولا تنتهي | يمكن للفني تسجيل رقم المخالفة عند إتمام العداد | رقم العداد هو مفتاح الخريطة</div>
 </div>
 
 <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwxBhv5mJGhtML4ZFkJoehlyZ_SxTv1-wgPHvsh9hd5I2r82zwqw6ChFYhCY9GIVy5F/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyTmvGTszxXjyBSx4bDAVru28lMoVCvC5vsZjKee9SmkexEwZQpE-cvod-7K7J9IcF7/exec';
     let map, markersLayer, polygonLayer, currentTileLayer = null;
     let currentLocationMarker = null, currentLocationCircle = null;
     let searchMap = null, searchMarker = null;
     let lastReportData = null;
+    let columnOrder = []; // ترتيب الأعمدة المخزن
     
     function getColorFromAction(action, status) {
         if (status === 'completed') return '#7f8c8d';
@@ -144,13 +146,14 @@
     
     function log(msg) { const logDiv = document.getElementById('logArea'); logDiv.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`; logDiv.scrollTop = logDiv.scrollHeight; console.log(msg); }
     
-    // دالة قراءة الملفات مع الحفاظ على أسماء الأعمدة الأصلية
+    // دالة قراءة الملفات مع الحفاظ على أسماء الأعمدة الأصلية وترتيبها
     async function parseCSVorExcel(file) {
         return new Promise((resolve, reject) => {
             const ext = file.name.split('.').pop().toLowerCase();
             const reader = new FileReader();
             reader.onload = (e) => {
                 let meters = [];
+                let originalHeaders = [];
                 if (ext === 'csv') {
                     const text = e.target.result;
                     const lines = text.trim().split(/\r?\n/);
@@ -162,6 +165,7 @@
                     let startIdx = 0;
                     if (hasHeaders) {
                         headers = firstLine.split(',').map(h => h.trim().replace(/["']/g, '').toLowerCase());
+                        originalHeaders = firstLine.split(',').map(h => h.trim().replace(/["']/g, ''));
                         for (let i=0; i<headers.length; i++) {
                             const h = headers[i];
                             if (h.match(/(meter|id|رقم|meterid)/i)) colIdx.id = i;
@@ -172,6 +176,7 @@
                         startIdx = 1;
                     } else {
                         headers = ['meter_id','lat','lng','action'];
+                        originalHeaders = ['meter_id','lat','lng','action'];
                         colIdx = { id:0, lat:1, lng:2, action:3 };
                     }
                     if (colIdx.id === -1 || colIdx.lat === -1 || colIdx.lng === -1)
@@ -195,7 +200,7 @@
                             let extra = {};
                             for (let j=0; j<parts.length; j++) {
                                 if (j !== colIdx.id && j !== colIdx.lat && j !== colIdx.lng && j !== colIdx.action) {
-                                    let headerName = (hasHeaders && j < headers.length) ? headers[j] : `col_${j+1}`;
+                                    let headerName = (hasHeaders && j < headers.length) ? originalHeaders[j] : `col_${j+1}`;
                                     let val = parts[j]?.replace(/["']/g, '').trim();
                                     if (val) extra[headerName] = val;
                                 }
@@ -205,7 +210,8 @@
                             meters.push({
                                 id: crypto.randomUUID(),
                                 meterId: meterId,
-                                lat, lng,
+                                lat: lat,
+                                lng: lng,
                                 action: actionRaw || 'unknown',
                                 status: 'pending', completedAt: null, teamId: null,
                                 violationNumber: '',
@@ -220,6 +226,7 @@
                     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
                     if (rows.length < 2) return reject(new Error('Excel فارغ'));
                     const headers = rows[0].map(c => String(c).trim().toLowerCase());
+                    originalHeaders = rows[0].map(c => String(c).trim());
                     let colIdx = { id: -1, lat: -1, lng: -1, action: -1 };
                     for (let i=0; i<headers.length; i++) {
                         const h = headers[i];
@@ -243,7 +250,7 @@
                             let extra = {};
                             for (let j=0; j<row.length; j++) {
                                 if (j !== colIdx.id && j !== colIdx.lat && j !== colIdx.lng && j !== colIdx.action) {
-                                    let headerName = (j < headers.length) ? headers[j] : `col_${j+1}`;
+                                    let headerName = (j < headers.length) ? originalHeaders[j] : `col_${j+1}`;
                                     let val = row[j] !== undefined ? String(row[j]).trim() : '';
                                     if (val) extra[headerName] = val;
                                 }
@@ -262,7 +269,7 @@
                         }
                     }
                 } else reject(new Error('نوع ملف غير مدعوم'));
-                resolve(meters);
+                resolve({ meters, originalHeaders });
             };
             reader.onerror = () => reject(new Error('فشل قراءة الملف'));
             if (ext === 'csv') reader.readAsText(file, 'UTF-8');
@@ -306,7 +313,7 @@
     function parseKMLCoords(coordStr, swap) { return coordStr.trim().split(/\s+/).map(p => { let [lng, lat] = p.split(',').map(Number); if (swap) [lat, lng] = [lng, lat]; return { lat, lng }; }).filter(p => !isNaN(p.lat) && !isNaN(p.lng)); }
     function isPointInPolygon(point, polygon) { let x=point.lng, y=point.lat, inside=false; for (let i=0,j=polygon.length-1; i<polygon.length; j=i++) { let xi=polygon[i].lng, yi=polygon[i].lat, xj=polygon[j].lng, yj=polygon[j].lat; let intersect = ((yi>y)!=(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi); if (intersect) inside=!inside; } return inside; }
     function assignMetersToTeams(meters, polygons) { let teams = polygons.map((p,i) => ({ id: crypto.randomUUID(), token: Math.random().toString(36).substring(2,12), name: p.name || `الفرقة ${i+1}`, polygonCoords: p.coords, meterIds: [] })); let assigned=0; for (let m of meters) { m.violationNumber = ''; let found=false; for (let t of teams) { if (isPointInPolygon({lat:m.lat, lng:m.lng}, t.polygonCoords)) { t.meterIds.push(m.id); m.teamId=t.id; assigned++; found=true; break; } } if (!found) { let def = teams.find(t=>t.name==='خارج المناطق'); if (!def) { def = { id:crypto.randomUUID(), token:Math.random().toString(36).substring(2,12), name:'خارج المناطق', polygonCoords:[], meterIds:[] }; teams.push(def); } def.meterIds.push(m.id); m.teamId = def.id; } } teams = teams.filter(t=>t.meterIds.length>0); return { teams, meters }; }
-    async function loadFromGoogleSheets() { try { const res = await fetch(`${SCRIPT_URL}?action=getManagerData`); if (!res.ok) throw new Error(`HTTP ${res.status}`); return await res.json(); } catch(e) { log('⚠️ فشل التحميل: '+e.message); return null; } }
+    async function loadFromGoogleSheets() { try { const res = await fetch(`${SCRIPT_URL}?action=getManagerData`); if (!res.ok) throw new Error(`HTTP ${res.status}`); const data = await res.json(); if (data.columnOrder) columnOrder = data.columnOrder; return data; } catch(e) { log('⚠️ فشل التحميل: '+e.message); return null; } }
     
     function createBalloonIcon(meter) { const bgColor = (meter.status === 'completed') ? '#7f8c8d' : getColorFromAction(meter.action, meter.status); const html = `<div class="balloon-marker"><div class="pin" style="background-color: ${bgColor};"><div class="number">${meter.meterId.length > 4 ? meter.meterId.slice(0,4) : meter.meterId}</div></div></div>`; return L.divIcon({ className: 'balloon-marker-container', html: html, iconSize: [36,36], iconAnchor: [18,32], popupAnchor: [0,-32] }); }
     
@@ -315,7 +322,18 @@
         let extraHtml = ''; 
         if (meter.extra && Object.keys(meter.extra).length) { 
             extraHtml = '<hr><div style="text-align:right; font-size:11px;">📌 بيانات إضافية:<br>'; 
-            for (let [k,v] of Object.entries(meter.extra)) if(v) extraHtml += `<span style="font-weight:bold;">${k}:</span> ${v}<br>`; 
+            // استخدام الترتيب المخزن إن وجد
+            let keys = Object.keys(meter.extra);
+            if (columnOrder.length) {
+                // ترتيب المفاتيح حسب columnOrder مع تجاهل الأعمدة الأساسية التي قد تكون موجودة
+                const extraKeys = keys.filter(k => columnOrder.includes(k));
+                const orderedKeys = columnOrder.filter(k => extraKeys.includes(k));
+                const remainingKeys = keys.filter(k => !orderedKeys.includes(k));
+                keys = [...orderedKeys, ...remainingKeys];
+            }
+            for (let k of keys) {
+                if (meter.extra[k]) extraHtml += `<span style="font-weight:bold;">${k}:</span> ${meter.extra[k]}<br>`;
+            }
             extraHtml += '</div>'; 
         } 
         return `<div style="text-align:center; min-width:200px;">
@@ -342,12 +360,23 @@
         const msgDiv = document.getElementById('fullMsg');
         msgDiv.innerHTML = '⏳ جاري أرشفة المنجز وتوزيع الجديد...';
         try {
-            const newMeters = await parseCSVorExcel(csvFile);
+            const { meters: newMeters, originalHeaders } = await parseCSVorExcel(csvFile);
             const polygons = await parseKMLFile(kmlFile, swap);
             if (!newMeters.length) throw new Error('لا توجد عدادات صالحة');
             if (!polygons.length) throw new Error('لا توجد مضلعات');
             const { teams, meters: assigned } = assignMetersToTeams(newMeters, polygons);
-            const payload = new URLSearchParams({ action: 'uploadNewData', metersJson: JSON.stringify(assigned), teamsJson: JSON.stringify(teams) }).toString();
+            
+            // استخراج ترتيب الأعمدة الأساسية والإضافية
+            const columnOrder = originalHeaders.filter(h => h.toLowerCase() !== 'meter_id' && h.toLowerCase() !== 'lat' && h.toLowerCase() !== 'lng' && h.toLowerCase() !== 'action');
+            // نضع الأعمدة الأساسية أولاً
+            const fullOrder = ['meter_id', 'lat', 'lng', 'action', ...columnOrder];
+            
+            const payload = new URLSearchParams({ 
+                action: 'uploadNewData', 
+                metersJson: JSON.stringify(assigned), 
+                teamsJson: JSON.stringify(teams),
+                columnOrder: JSON.stringify(fullOrder)
+            }).toString();
             const res = await fetch(SCRIPT_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:payload });
             const result = await res.json();
             if (result.success) { msgDiv.innerHTML = '✅ تم الاستبدال والأرشفة بنجاح'; refreshData(); }
@@ -361,9 +390,18 @@
         const msgDiv = document.getElementById('appendMsg');
         msgDiv.innerHTML = '⏳ جاري إضافة العدادات الجديدة وتوزيعها (يُسمح بتكرار الأرقام)...';
         try {
-            const newMeters = await parseCSVorExcel(csvFile);
+            const { meters: newMeters, originalHeaders } = await parseCSVorExcel(csvFile);
             if (!newMeters.length) throw new Error('لا توجد عدادات صالحة');
-            const payload = new URLSearchParams({ action: 'appendMeters', metersJson: JSON.stringify(newMeters) }).toString();
+            
+            // استخراج ترتيب الأعمدة الإضافية
+            const columnOrder = originalHeaders.filter(h => h.toLowerCase() !== 'meter_id' && h.toLowerCase() !== 'lat' && h.toLowerCase() !== 'lng' && h.toLowerCase() !== 'action');
+            const fullOrder = ['meter_id', 'lat', 'lng', 'action', ...columnOrder];
+            
+            const payload = new URLSearchParams({ 
+                action: 'appendMeters', 
+                metersJson: JSON.stringify(newMeters),
+                columnOrder: JSON.stringify(fullOrder)
+            }).toString();
             const res = await fetch(SCRIPT_URL, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:payload });
             const result = await res.json();
             if (result.addedCount !== undefined) {
@@ -373,44 +411,39 @@
         } catch(err) { msgDiv.innerHTML = `❌ ${err.message}`; log(err.message); }
     }
     
-    // ========== دوال التصدير المحسّنة ==========
+    // ========== دوال التصدير مع الحفاظ على الترتيب ==========
     
-    // تصدير الجدول الرئيسي مع الحفاظ على ترتيب الأعمدة الإضافية
     async function exportToExcel() {
         const data = await loadFromGoogleSheets();
         if (!data?.meters) { alert('لا توجد بيانات'); return; }
         
-        // جمع المفاتيح الإضافية بالترتيب (أول ظهور)
-        const allExtraKeys = [];
-        const seen = new Set();
+        // استخدام الترتيب المخزن أو إنشاء ترتيب افتراضي
+        let order = columnOrder.length ? columnOrder : ['meter_id', 'lat', 'lng', 'action', 'status', 'completedAt', 'teamId', 'violationNumber'];
+        // إضافة أي مفاتيح إضافية غير موجودة في order
+        const allExtraKeys = new Set();
         for (const m of data.meters) {
             if (m.extra) {
-                for (const k of Object.keys(m.extra)) {
-                    if (!seen.has(k)) {
-                        seen.add(k);
-                        allExtraKeys.push(k);
-                    }
-                }
+                Object.keys(m.extra).forEach(k => allExtraKeys.add(k));
             }
+        }
+        for (const k of allExtraKeys) {
+            if (!order.includes(k)) order.push(k);
         }
         
         const rows = data.meters.map(m => {
-            // الأعمدة الأساسية بنفس أسماء الملف الأصلي
-            const row = {
-                'meter_id': m.meterId,
-                'lat': m.lat,
-                'lng': m.lng,
-                'action': m.action,
-                'status': m.status === 'completed' ? 'تم' : 'قيد',
-                'completedAt': m.completedAt || '',
-                'teamId': m.teamId || '',
-                'violationNumber': m.violationNumber || ''
-            };
-            // إضافة الأعمدة الإضافية بالترتيب المحفوظ
-            if (m.extra) {
-                allExtraKeys.forEach(k => {
-                    row[k] = m.extra[k] || '';
-                });
+            const row = {};
+            // نضع الأعمدة بالترتيب
+            for (const key of order) {
+                if (key === 'meter_id') row[key] = m.meterId;
+                else if (key === 'lat') row[key] = m.lat;
+                else if (key === 'lng') row[key] = m.lng;
+                else if (key === 'action') row[key] = m.action;
+                else if (key === 'status') row[key] = m.status === 'completed' ? 'تم' : 'قيد';
+                else if (key === 'completedAt') row[key] = m.completedAt || '';
+                else if (key === 'teamId') row[key] = m.teamId || '';
+                else if (key === 'violationNumber') row[key] = m.violationNumber || '';
+                else if (m.extra && m.extra[key] !== undefined) row[key] = m.extra[key];
+                else row[key] = '';
             }
             return row;
         });
@@ -421,40 +454,37 @@
         XLSX.writeFile(wb, `meters_${new Date().toISOString().slice(0,19)}.xlsx`);
     }
     
-    // تصدير تقرير الأرشيف مع الحفاظ على الترتيب
     function exportReportToExcel() {
         if (!lastReportData || lastReportData.length === 0) { alert('لا توجد بيانات للتصدير'); return; }
         
-        const allExtraKeys = [];
-        const seen = new Set();
+        let order = columnOrder.length ? columnOrder : ['meter_id', 'lat', 'lng', 'action', 'status', 'completedAt', 'teamId', 'violationNumber'];
+        const allExtraKeys = new Set();
         for (const r of lastReportData) {
             if (r.extra) {
-                for (const k of Object.keys(r.extra)) {
-                    if (!seen.has(k)) {
-                        seen.add(k);
-                        allExtraKeys.push(k);
-                    }
-                }
+                Object.keys(r.extra).forEach(k => allExtraKeys.add(k));
             }
         }
+        for (const k of allExtraKeys) {
+            if (!order.includes(k)) order.push(k);
+        }
+        // إضافة archiveTimestamp في النهاية
+        if (!order.includes('archiveTimestamp')) order.push('archiveTimestamp');
         
         const rows = lastReportData.map(r => {
-            const row = {
-                'meter_id': r.meterId,
-                'lat': r.lat,
-                'lng': r.lng,
-                'action': r.action,
-                'status': r.status === 'completed' ? 'تم' : r.status,
-                'completedAt': r.completedAt ? new Date(r.completedAt).toLocaleString() : '',
-                'teamId': r.teamId || '',
-                'violationNumber': r.violationNumber || ''
-            };
-            if (r.extra) {
-                allExtraKeys.forEach(k => {
-                    row[k] = r.extra[k] || '';
-                });
+            const row = {};
+            for (const key of order) {
+                if (key === 'meter_id') row[key] = r.meterId;
+                else if (key === 'lat') row[key] = r.lat;
+                else if (key === 'lng') row[key] = r.lng;
+                else if (key === 'action') row[key] = r.action;
+                else if (key === 'status') row[key] = r.status === 'completed' ? 'تم' : r.status;
+                else if (key === 'completedAt') row[key] = r.completedAt ? new Date(r.completedAt).toLocaleString() : '';
+                else if (key === 'teamId') row[key] = r.teamId || '';
+                else if (key === 'violationNumber') row[key] = r.violationNumber || '';
+                else if (key === 'archiveTimestamp') row[key] = r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : '';
+                else if (r.extra && r.extra[key] !== undefined) row[key] = r.extra[key];
+                else row[key] = '';
             }
-            row['archiveTimestamp'] = r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : '';
             return row;
         });
         
@@ -556,21 +586,41 @@
                 return;
             }
             resultDiv.innerHTML = `<div style="color:green;">✅ تم العثور على ${data.count} سجل</div>`;
-            let html = `<table><thead><tr><th>meter_id</th><th>lat</th><th>lng</th><th>action</th><th>status</th><th>completedAt</th><th>teamId</th><th>violationNumber</th><th>بيانات إضافية</th><th>archiveTimestamp</th></tr></thead><tbody>`;
-            for (let row of data.rows) {
-                const extraStr = Object.entries(row.extra).map(([k,v])=>`${k}:${v}`).join('; ');
-                html += `<tr>
-                    <td>${row.meterId}</td>
-                    <td>${row.lat}</td>
-                    <td>${row.lng}</td>
-                    <td>${row.action}</td>
-                    <td>${row.status === 'completed' ? 'تم' : row.status}</td>
-                    <td>${row.completedAt ? new Date(row.completedAt).toLocaleString() : ''}</td>
-                    <td>${row.teamId}</td>
-                    <td>${row.violationNumber}</td>
-                    <td>${extraStr}</td>
-                    <td>${row.archiveTimestamp ? new Date(row.archiveTimestamp).toLocaleString() : ''}</td>
-                </tr>`;
+            // عرض الجدول في الواجهة
+            let order = columnOrder.length ? columnOrder : ['meter_id', 'lat', 'lng', 'action', 'status', 'completedAt', 'teamId', 'violationNumber'];
+            const allExtraKeys = new Set();
+            for (const r of data.rows) {
+                if (r.extra) {
+                    Object.keys(r.extra).forEach(k => allExtraKeys.add(k));
+                }
+            }
+            for (const k of allExtraKeys) {
+                if (!order.includes(k)) order.push(k);
+            }
+            if (!order.includes('archiveTimestamp')) order.push('archiveTimestamp');
+            
+            let html = `<table><thead><tr>`;
+            for (const col of order) {
+                html += `<th>${col}</th>`;
+            }
+            html += `</tr></thead><tbody>`;
+            for (const row of data.rows) {
+                html += `<tr>`;
+                for (const col of order) {
+                    let val = '';
+                    if (col === 'meter_id') val = row.meterId;
+                    else if (col === 'lat') val = row.lat;
+                    else if (col === 'lng') val = row.lng;
+                    else if (col === 'action') val = row.action;
+                    else if (col === 'status') val = row.status === 'completed' ? 'تم' : row.status;
+                    else if (col === 'completedAt') val = row.completedAt ? new Date(row.completedAt).toLocaleString() : '';
+                    else if (col === 'teamId') val = row.teamId;
+                    else if (col === 'violationNumber') val = row.violationNumber;
+                    else if (col === 'archiveTimestamp') val = row.archiveTimestamp ? new Date(row.archiveTimestamp).toLocaleString() : '';
+                    else if (row.extra && row.extra[col] !== undefined) val = row.extra[col];
+                    html += `<td>${val}</td>`;
+                }
+                html += `</tr>`;
             }
             html += `</tbody></table>`;
             container.innerHTML = html;
