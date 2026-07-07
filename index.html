@@ -120,7 +120,7 @@
 </div>
 
 <script>
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx1NBhclS_74NtbAUZLuWmHMMeazbgVf483O_y2527W921-2e-rS4Omxh7rwTY1-qS7/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxRYOR8fqJaTfN6xwveBdxoNOBaqK3WIWOhPSEvkAZmjY6WyUXrlKvAkRfDq_uPkGiE/exec';
     let map, markersLayer, polygonLayer, currentTileLayer = null;
     let currentLocationMarker = null, currentLocationCircle = null;
     let searchMap = null, searchMarker = null;
@@ -182,7 +182,7 @@
     
     function log(msg) { const logDiv = document.getElementById('logArea'); logDiv.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`; logDiv.scrollTop = logDiv.scrollHeight; console.log(msg); }
     
-    // دالة قراءة الملفات مع الحفاظ على أسماء الأعمدة الأصلية وترتيبها، مع تثبيت الأساسيات
+    // دالة قراءة الملفات مع الحفاظ على أسماء الأعمدة الأصلية وترتيبها
     async function parseCSVorExcel(file) {
         return new Promise((resolve, reject) => {
             const ext = file.name.split('.').pop().toLowerCase();
@@ -241,7 +241,6 @@
                                     if (val) extra[headerName] = val;
                                 }
                             }
-                            // إزالة أي حقائق قد تكون مكررة مع الأعمدة الأساسية
                             const baseCols = ['meterid','meter id','latitude','lat','longitude','lng','action'];
                             baseCols.forEach(c => delete extra[c]);
                             meters.push({
@@ -361,6 +360,7 @@
         let extraHtml = ''; 
         if (meter.extra && Object.keys(meter.extra).length) { 
             extraHtml = '<hr><div style="text-align:right; font-size:11px;">📌 بيانات إضافية:<br>'; 
+            // عرض الحقول الإضافية بترتيب columnOrder (بعد الأساسيات)
             let keys = Object.keys(meter.extra);
             if (columnOrder.length) {
                 const extraKeys = keys.filter(k => columnOrder.includes(k));
@@ -445,9 +445,9 @@
         const data = await loadFromGoogleSheets();
         if (!data?.meters) { alert('لا توجد بيانات'); return; }
         
-        // بدء الترتيب من columnOrder المخزن، أو إنشاء ترتيب افتراضي
+        // بناء قائمة الأعمدة بدءاً من columnOrder المخزن
         let order = columnOrder.length ? columnOrder : ['meterid', 'latitude', 'longitude', 'action'];
-        // نضيف أي أعمدة إضافية جديدة غير موجودة
+        // إضافة أي أعمدة إضافية جديدة غير موجودة في order (مثل status, completedAt, teamId, violationNumber قد تم إضافتها أثناء التخزين)
         const allExtraKeys = new Set();
         for (const m of data.meters) {
             if (m.extra) {
@@ -463,7 +463,6 @@
         const rows = data.meters.map(m => {
             const row = {};
             for (const key of order) {
-                const keyLower = key.toLowerCase().trim();
                 const base = getBaseColumnName(key);
                 if (base === 'meterid') {
                     row[key] = m.meterId;
@@ -473,13 +472,13 @@
                     row[key] = m.lng;
                 } else if (base === 'action') {
                     row[key] = m.action;
-                } else if (keyLower === 'status') {
+                } else if (key.toLowerCase() === 'status') {
                     row[key] = m.status === 'completed' ? 'تم' : 'قيد';
-                } else if (keyLower === 'completedat' || keyLower === 'completedAt') {
+                } else if (key.toLowerCase() === 'completedat' || key.toLowerCase() === 'completedAt') {
                     row[key] = m.completedAt || '';
-                } else if (keyLower === 'teamid' || keyLower === 'teamId') {
+                } else if (key.toLowerCase() === 'teamid' || key.toLowerCase() === 'teamId') {
                     row[key] = m.teamId || '';
-                } else if (keyLower === 'violationnumber' || keyLower === 'violationNumber') {
+                } else if (key.toLowerCase() === 'violationnumber' || key.toLowerCase() === 'violationNumber') {
                     row[key] = m.violationNumber || '';
                 } else if (m.extra && m.extra[key] !== undefined) {
                     row[key] = m.extra[key];
@@ -515,7 +514,6 @@
         const rows = lastReportData.map(r => {
             const row = {};
             for (const key of order) {
-                const keyLower = key.toLowerCase().trim();
                 const base = getBaseColumnName(key);
                 if (base === 'meterid') {
                     row[key] = r.meterId;
@@ -525,15 +523,15 @@
                     row[key] = r.lng;
                 } else if (base === 'action') {
                     row[key] = r.action;
-                } else if (keyLower === 'status') {
+                } else if (key.toLowerCase() === 'status') {
                     row[key] = r.status === 'completed' ? 'تم' : r.status;
-                } else if (keyLower === 'completedat' || keyLower === 'completedAt') {
+                } else if (key.toLowerCase() === 'completedat' || key.toLowerCase() === 'completedAt') {
                     row[key] = r.completedAt ? new Date(r.completedAt).toLocaleString() : '';
-                } else if (keyLower === 'teamid' || keyLower === 'teamId') {
+                } else if (key.toLowerCase() === 'teamid' || key.toLowerCase() === 'teamId') {
                     row[key] = r.teamId || '';
-                } else if (keyLower === 'violationnumber' || keyLower === 'violationNumber') {
+                } else if (key.toLowerCase() === 'violationnumber' || key.toLowerCase() === 'violationNumber') {
                     row[key] = r.violationNumber || '';
-                } else if (keyLower === 'archivetimestamp' || keyLower === 'archiveTimestamp') {
+                } else if (key.toLowerCase() === 'archivetimestamp' || key.toLowerCase() === 'archiveTimestamp') {
                     row[key] = r.archiveTimestamp ? new Date(r.archiveTimestamp).toLocaleString() : '';
                 } else if (r.extra && r.extra[key] !== undefined) {
                     row[key] = r.extra[key];
